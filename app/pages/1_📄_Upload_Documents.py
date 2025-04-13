@@ -1,18 +1,16 @@
+# app/pages/1_📄_Upload_Documents.py
+
 import os
 
 import streamlit as st
 from services.document_manager import DocumentManager
 from services.vector_db_manager import VectorDBManager
 
-st.set_page_config(page_title="Upload Documents", page_icon="📄")
-
 st.title("📄 Upload Documents")
 
-# Initialize services
 document_manager = DocumentManager()
 vector_db = VectorDBManager()
 
-# File upload section
 st.header("Upload Documents")
 uploaded_files = st.file_uploader(
     "Choose files to upload", type=["pdf", "txt"], accept_multiple_files=True
@@ -22,7 +20,6 @@ if uploaded_files:
     if st.button("Upload"):
         with st.spinner("Processing files..."):
             for uploaded_file in uploaded_files:
-                # Save the file
                 file_path = os.path.join(
                     document_manager.upload_folder, uploaded_file.name
                 )
@@ -31,7 +28,6 @@ if uploaded_files:
 
                 st.success(f"Uploaded: {uploaded_file.name}")
 
-            # Process documents
             documents = document_manager.read_uploaded_documents()
             if documents:
                 embeddings, metadata = vector_db.compute_embeddings(documents)
@@ -41,7 +37,6 @@ if uploaded_files:
             else:
                 st.error("No valid documents found in the uploaded files.")
 
-# Display current documents
 st.header("Current Documents")
 if os.path.exists(document_manager.upload_folder):
     files = os.listdir(document_manager.upload_folder)

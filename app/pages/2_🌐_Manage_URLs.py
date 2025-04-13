@@ -1,28 +1,24 @@
+# app/pages/2_🌐_Manage_URLs.py
+
 import os
 
 import streamlit as st
 from services.document_manager import DocumentManager
 from services.vector_db_manager import VectorDBManager
 
-st.set_page_config(page_title="Manage URLs", page_icon="🌐")
-
 st.title("🌐 Manage URLs")
 
-# Initialize services
 document_manager = DocumentManager()
 vector_db = VectorDBManager()
 
-# URL input section
 st.header("Add URL")
 url = st.text_input("Enter URL to add", placeholder="https://example.com")
 
 if url and st.button("Add URL"):
     with st.spinner("Processing URL..."):
-        # Fetch documents from URL
         new_docs = document_manager.fetch_documents_from_url(url)
 
         if new_docs:
-            # Save URL to file
             if os.path.exists(document_manager.url_file):
                 with open(document_manager.url_file, "r", encoding="utf-8") as f:
                     existing_urls = f.read().splitlines()
@@ -33,7 +29,6 @@ if url and st.button("Add URL"):
                 existing_urls.append(url)
                 document_manager.save_url_list(existing_urls)
 
-            # Process documents
             documents = document_manager.read_uploaded_documents()
             documents.extend(new_docs)
 
@@ -47,7 +42,6 @@ if url and st.button("Add URL"):
         else:
             st.error("Could not fetch content from the URL.")
 
-# Display current URLs
 st.header("Current URLs")
 if os.path.exists(document_manager.url_file):
     with open(document_manager.url_file, "r", encoding="utf-8") as f:

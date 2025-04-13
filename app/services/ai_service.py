@@ -1,3 +1,5 @@
+# app/services/ai_service.py
+
 from typing import Dict, List
 
 import torch
@@ -16,27 +18,35 @@ from utils.logger import logger
 
 class AIService:
     def __init__(self):
-        logger.info("🔄 Loading documents and URLs...")
+        logger.info("🔄 Initializing AIService...")
 
         self.document_manager = DocumentManager()
+        self._initialize_services()
+        logger.info("✅ AIService initialized successfully")
+
+    def _initialize_services(self):
+        logger.info("Initializing AI services...")
         documents = self.document_manager.read_all_documents()
 
-        # Initialize vector store and retriever only if documents exist
         if documents:
-            logger.info("🔎 Embedding documents...")
+            logger.info(f"🔎 Processing {len(documents)} documents...")
 
             self.vector_db = VectorDBManager()
             embeddings, metadata = self.vector_db.compute_embeddings(documents)
             self.vector_db.metadata = metadata
             self.index = self.vector_db.build_faiss_index(embeddings)
 
-            # Use CPU explicitly to avoid GPU-related issues
             device = "cpu"
             if torch.backends.mps.is_available():
                 device = "mps"
+                logger.info("Using MPS (Metal Performance Shaders) for acceleration")
             elif torch.cuda.is_available():
                 device = "cuda"
+                logger.info("Using CUDA for acceleration")
+            else:
+                logger.info("Using CPU for processing")
 
+            logger.info("Creating FAISS vector store...")
             self.faiss_vectorstore = FAISS.from_texts(
                 texts=[doc.page_content for doc in documents],
                 embedding=HuggingFaceEmbeddings(
@@ -49,6 +59,7 @@ class AIService:
             self.retriever = self.faiss_vectorstore.as_retriever(
                 search_type="similarity", k=4
             )
+            logger.info("Vector store and retriever initialized successfully")
         else:
             logger.info(
                 "No documents or URLs found. Vector store will be initialized when content is added."
@@ -56,12 +67,15 @@ class AIService:
             self.faiss_vectorstore = None
             self.retriever = None
 
+        logger.info("Initializing language model...")
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
             temperature=0,
             google_api_key=settings.GOOGLE_API_KEY,
         )
+        logger.info("Language model initialized successfully")
 
+        logger.info("Setting up chat prompt template...")
         self.prompt = ChatPromptTemplate.from_messages(
             [
                 SystemMessage(
@@ -70,7 +84,10 @@ class AIService:
 
                       Please follow these guidelines carefully:
 
-                      1. **Always begin your response by listing the sources used** to answer the user's question. Use a clear and readable format (e.g., filenames, URLs, page numbers, etc.) before giving the actual answer.
+                      1. **Always begin your response with a "Sources:" section** that lists all the sources used to answer the question. Format it like this:
+                         Sources:
+                         - [Source Type]: [Source Name] (e.g., "Document: user_manual.pdf", "URL: example.com", "Page: 42")
+                         
                       2. Only use the provided context to answer the user's question. If the answer is not available in the context, respond politely and **do not** guess.
                       3. If the question requires real-time data or falls outside the scope of the context, use your available tools (e.g., web search) if permitted.
                       4. Be thorough yet concise — like a friendly, thoughtful teacher who wants the user to understand deeply.
@@ -87,18 +104,17 @@ class AIService:
         )
 
         self.chain: Runnable = self.prompt | self.llm
-
         self.chat_history: List[Dict[str, str]] = []
-
-        logger.info("✅ ChatBot is ready!")
+        logger.info("Chat prompt template and chain setup completed")
 
     def chat(self, query: str):
-        logger.info("💬 Retrieving context...")
+        logger.info(f"💬 Processing query: {query[:50]}...")
 
         if not self.retriever:
-            logger.info("No documents available for context retrieval.")
+            logger.warning("No documents available for context retrieval")
             context = ""
         elif isinstance(self.retriever, VectorStoreRetriever):
+            logger.info("Retrieving relevant documents...")
             results_with_scores = (
                 self.retriever.vectorstore.similarity_search_with_score(query, k=3)
             )
@@ -107,9 +123,8 @@ class AIService:
             retrieved_docs = []
 
             if not filtered_results:
-                logger.warning("⚠️ No results passed the similarity threshold.")
+                logger.warning("⚠️ No results passed the similarity threshold")
                 retrieved_docs = []
-
             else:
                 for doc, score in filtered_results:
                     logger.debug(
@@ -118,14 +133,16 @@ class AIService:
                     logger.debug(f"{doc.page_content[:200]} ...")
 
                 retrieved_docs = [doc for doc, _ in filtered_results]
+                logger.info(f"Retrieved {len(retrieved_docs)} relevant documents")
 
         else:
+            logger.info("Using custom retriever to get relevant documents")
             retrieved_docs = self.retriever.get_relevant_documents(query)
 
         if self.retriever:
-            logger.debug(f"Retrieved documents: {retrieved_docs}")
+            logger.debug("Combining retrieved documents into context")
             context = "\n\n".join([doc.page_content for doc in retrieved_docs])
-            logger.debug(f"Context: {context}")
+            logger.debug(f"Context length: {len(context)} characters")
         else:
             context = ""
 
@@ -134,7 +151,8 @@ class AIService:
         for chunk in self.chain.stream(
             {"question": query, "context": context, "chat_history": self.chat_history}
         ):
-            logger.info(chunk.content)
+            logger.debug(f"Generated chunk: {chunk.content[:50]}...")
 
         self.chat_history.append(HumanMessage(content=query))
         self.chat_history.append(AIMessage(content=chunk.content))
+        logger.info("✅ Response generated and chat history updated")
