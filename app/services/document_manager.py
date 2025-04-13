@@ -56,6 +56,25 @@ class DocumentManager:
             all_documents.extend(docs)
         return all_documents
 
+    def read_url_documents(self) -> List[Document]:
+        all_documents = []
+        try:
+            with open(self.url_file, "r", encoding="utf-8") as f:
+                urls = [url.strip() for url in f.readlines() if url.strip()]
+
+            for url in urls:
+                url_docs = self.fetch_documents_from_url(url)
+                all_documents.extend(url_docs)
+        except Exception as e:
+            logger.error(f"Error loading URLs: {e}")
+        return all_documents
+
+    def read_all_documents(self) -> List[Document]:
+        """Read all documents from both uploaded files and URLs."""
+        documents = self.read_uploaded_documents()
+        documents.extend(self.read_url_documents())
+        return documents
+
     def fetch_documents_from_url(self, url: str) -> List[Document]:
         try:
             loader = WebBaseLoader([url])

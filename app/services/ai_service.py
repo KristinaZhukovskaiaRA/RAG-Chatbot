@@ -15,18 +15,13 @@ from utils.logger import logger
 
 class AIService:
     def __init__(self):
-        logger.info("🔄 Loading documents...")
+        logger.info("🔄 Loading documents and URLs...")
 
         self.document_manager = DocumentManager()
-        documents = self.document_manager.read_uploaded_documents()
+        documents = self.document_manager.read_all_documents()
 
-        if not documents:
-            logger.warning("⚠️ No documents found. Please upload documents first.")
-            documents = []
-            self.vector_db = VectorDBManager()
-            self.faiss_vectorstore = None
-            self.retriever = None
-        else:
+        # Initialize vector store and retriever only if documents exist
+        if documents:
             logger.info("🔎 Embedding documents...")
 
             self.vector_db = VectorDBManager()
@@ -34,7 +29,6 @@ class AIService:
             self.vector_db.metadata = metadata
             self.index = self.vector_db.build_faiss_index(embeddings)
 
-            # Create FAISS-compatible VectorStore for LangChain retriever
             self.faiss_vectorstore = FAISS.from_texts(
                 texts=[doc.page_content for doc in documents],
                 embedding=HuggingFaceBgeEmbeddings(
@@ -47,6 +41,12 @@ class AIService:
             self.retriever = self.faiss_vectorstore.as_retriever(
                 search_type="similarity", k=4
             )
+        else:
+            logger.info(
+                "No documents or URLs found. Vector store will be initialized when content is added."
+            )
+            self.faiss_vectorstore = None
+            self.retriever = None
 
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
@@ -88,23 +88,19 @@ class AIService:
         logger.info("💬 Retrieving context...")
 
         if not self.retriever:
-            logger.warning("⚠️ No documents available. Please upload documents first.")
-            self.chat_history.append(HumanMessage(content=query))
-            self.chat_history.append(
-                AIMessage(
-                    content="I'm ready to help! However, I don't have any documents to reference yet. You can upload documents to get more detailed and accurate responses."
-                )
-            )
-            return "I'm ready to help! However, I don't have any documents to reference yet. You can upload documents to get more detailed and accurate responses."
-
-        if isinstance(self.retriever, VectorStoreRetriever):
+            logger.info("No documents available for context retrieval.")
+            context = ""
+        elif isinstance(self.retriever, VectorStoreRetriever):
             results_with_scores = (
                 self.retriever.vectorstore.similarity_search_with_score(query, k=3)
             )
             filtered_results = [(doc, score) for doc, score in results_with_scores]
 
+            retrieved_docs = []
+
             if not filtered_results:
-                logger.warning("⚠️ No results passed the similarity threshold (<= 1.0).")
+                logger.warning("⚠️ No results passed the similarity threshold.")
+                retrieved_docs = []
 
             else:
                 for doc, score in filtered_results:
@@ -113,14 +109,17 @@ class AIService:
                     )
                     logger.debug(f"{doc.page_content[:200]} ...")
 
-            retrieved_docs = [doc for doc, _ in filtered_results]
+                retrieved_docs = [doc for doc, _ in filtered_results]
 
         else:
             retrieved_docs = self.retriever.get_relevant_documents(query)
 
-        logger.debug(f"Retrieved documents: {retrieved_docs}")
-        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
-        logger.debug(f"Context: {context}")
+        if self.retriever:
+            logger.debug(f"Retrieved documents: {retrieved_docs}")
+            context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            logger.debug(f"Context: {context}")
+        else:
+            context = ""
 
         logger.info("🧠 Generating response...")
 
