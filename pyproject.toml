@@ -20,4 +20,5 @@ dependencies = [
     "streamlit==1.32.0",
     "transformers>=4.51.2",
     "torch>=2.1.0",
+    "langchain-huggingface>=0.1.2",
 ]

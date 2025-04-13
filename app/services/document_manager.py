@@ -70,7 +70,6 @@ class DocumentManager:
         return all_documents
 
     def read_all_documents(self) -> List[Document]:
-        """Read all documents from both uploaded files and URLs."""
         documents = self.read_uploaded_documents()
         documents.extend(self.read_url_documents())
         return documents

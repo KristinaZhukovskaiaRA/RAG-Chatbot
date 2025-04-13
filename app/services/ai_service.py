@@ -1,13 +1,14 @@
 from typing import Dict, List
 
+import torch
 from config import settings
 from langchain.schema.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.vectorstores.base import VectorStoreRetriever
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
 from services.document_manager import DocumentManager
 from services.vector_db_manager import VectorDBManager
 from utils.logger import logger
@@ -29,11 +30,18 @@ class AIService:
             self.vector_db.metadata = metadata
             self.index = self.vector_db.build_faiss_index(embeddings)
 
+            # Use CPU explicitly to avoid GPU-related issues
+            device = "cpu"
+            if torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+
             self.faiss_vectorstore = FAISS.from_texts(
                 texts=[doc.page_content for doc in documents],
-                embedding=HuggingFaceBgeEmbeddings(
+                embedding=HuggingFaceEmbeddings(
                     model_name="sentence-transformers/all-MiniLM-L6-v2",
-                    model_kwargs={"device": "cpu"},
+                    model_kwargs={"device": device},
                 ),
                 metadatas=[doc.metadata for doc in documents],
             )

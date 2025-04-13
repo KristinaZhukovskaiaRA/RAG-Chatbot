@@ -2,6 +2,7 @@ from typing import List, Tuple
 
 import faiss
 import numpy as np
+import torch
 from langchain_core.documents import Document
 from sentence_transformers import SentenceTransformer
 
@@ -11,6 +12,14 @@ class VectorDBManager:
         self.index = None
         self.retrieval_model = SentenceTransformer("all-MiniLM-L6-v2")
         self.metadata = []
+
+    def __del__(self):
+        """Cleanup method to ensure resources are properly released"""
+        if hasattr(self, "index") and self.index is not None:
+            self.index = None
+        if hasattr(self, "retrieval_model"):
+            del self.retrieval_model
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
     def compute_embeddings(
         self, documents: List[Document]
