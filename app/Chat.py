@@ -30,25 +30,30 @@ if prompt := st.chat_input("What would you like to know?"):
         message_placeholder = st.empty()
         full_response = ""
 
-        # Get response from AI service
-        for chunk in st.session_state.ai_service.chain.stream(
-            {
-                "question": prompt,
-                "context": "\n\n".join(
-                    [
-                        doc.page_content
-                        for doc in st.session_state.ai_service.retriever.get_relevant_documents(
-                            prompt
-                        )
-                    ]
-                ),
-                "chat_history": st.session_state.ai_service.chat_history,
-            }
-        ):
-            full_response += chunk.content
-            message_placeholder.markdown(full_response + "▌")
+        # Check if retriever is available
+        if st.session_state.ai_service.retriever is None:
+            full_response = "I'm sorry, but I don't have any documents to reference. Please upload some documents first."
+            message_placeholder.markdown(full_response)
+        else:
+            # Get response from AI service
+            for chunk in st.session_state.ai_service.chain.stream(
+                {
+                    "question": prompt,
+                    "context": "\n\n".join(
+                        [
+                            doc.page_content
+                            for doc in st.session_state.ai_service.retriever.get_relevant_documents(
+                                prompt
+                            )
+                        ]
+                    ),
+                    "chat_history": st.session_state.ai_service.chat_history,
+                }
+            ):
+                full_response += chunk.content
+                message_placeholder.markdown(full_response + "▌")
 
-        message_placeholder.markdown(full_response)
+            message_placeholder.markdown(full_response)
 
     # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": full_response})

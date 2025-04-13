@@ -1,55 +1,57 @@
-import os
 from typing import Dict, List
 
-from langchain.embeddings import HuggingFaceBgeEmbeddings
+from config import settings
 from langchain.schema.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.vectorstores.base import VectorStoreRetriever
-from langchain.vectorstores.faiss import FAISS
+from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI
 from services.document_manager import DocumentManager
 from services.vector_db_manager import VectorDBManager
+from utils.logger import logger
 
 
 class AIService:
     def __init__(self):
-        print("🔄 Loading documents...")
+        logger.info("🔄 Loading documents...")
 
         self.document_manager = DocumentManager()
         documents = self.document_manager.read_uploaded_documents()
 
         if not documents:
-            raise ValueError(
-                "No documents were loaded. Please upload files to proceed."
+            logger.warning("⚠️ No documents found. Please upload documents first.")
+            documents = []
+            self.vector_db = VectorDBManager()
+            self.faiss_vectorstore = None
+            self.retriever = None
+        else:
+            logger.info("🔎 Embedding documents...")
+
+            self.vector_db = VectorDBManager()
+            embeddings, metadata = self.vector_db.compute_embeddings(documents)
+            self.vector_db.metadata = metadata
+            self.index = self.vector_db.build_faiss_index(embeddings)
+
+            # Create FAISS-compatible VectorStore for LangChain retriever
+            self.faiss_vectorstore = FAISS.from_texts(
+                texts=[doc.page_content for doc in documents],
+                embedding=HuggingFaceBgeEmbeddings(
+                    model_name="sentence-transformers/all-MiniLM-L6-v2",
+                    model_kwargs={"device": "cpu"},
+                ),
+                metadatas=[doc.metadata for doc in documents],
             )
 
-        print("🔎 Embedding documents...")
-
-        self.vector_db = VectorDBManager()
-        embeddings, metadata = self.vector_db.compute_embeddings(documents)
-        self.vector_db.metadata = metadata
-        self.index = self.vector_db.build_faiss_index(embeddings)
-
-        # Create FAISS-compatible VectorStore for LangChain retriever
-        self.faiss_vectorstore = FAISS.from_texts(
-            texts=[doc.page_content for doc in documents],
-            embedding=HuggingFaceBgeEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2",
-                model_kwargs={"device": "cpu"},
-            ),
-            metadatas=[doc.metadata for doc in documents],
-        )
-
-        self.retriever = self.faiss_vectorstore.as_retriever(
-            search_type="similarity", k=4
-        )
+            self.retriever = self.faiss_vectorstore.as_retriever(
+                search_type="similarity", k=4
+            )
 
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
             temperature=0,
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            max_tokens=1024,
+            google_api_key=settings.GOOGLE_API_KEY,
         )
 
         self.prompt = ChatPromptTemplate.from_messages(
@@ -80,10 +82,20 @@ class AIService:
 
         self.chat_history: List[Dict[str, str]] = []
 
-        print("✅ ChatBot is ready!")
+        logger.info("✅ ChatBot is ready!")
 
     def chat(self, query: str):
-        print("💬 Retrieving context...")
+        logger.info("💬 Retrieving context...")
+
+        if not self.retriever:
+            logger.warning("⚠️ No documents available. Please upload documents first.")
+            self.chat_history.append(HumanMessage(content=query))
+            self.chat_history.append(
+                AIMessage(
+                    content="I'm ready to help! However, I don't have any documents to reference yet. You can upload documents to get more detailed and accurate responses."
+                )
+            )
+            return "I'm ready to help! However, I don't have any documents to reference yet. You can upload documents to get more detailed and accurate responses."
 
         if isinstance(self.retriever, VectorStoreRetriever):
             results_with_scores = (
@@ -92,30 +104,30 @@ class AIService:
             filtered_results = [(doc, score) for doc, score in results_with_scores]
 
             if not filtered_results:
-                print("⚠️ No results passed the similarity threshold (<= 1.0).")
+                logger.warning("⚠️ No results passed the similarity threshold (<= 1.0).")
 
             else:
                 for doc, score in filtered_results:
-                    print(
+                    logger.debug(
                         f"[{score:.4f}] {doc.metadata.get('source_file') or doc.metadata.get('source_url')}"
                     )
-                    print(doc.page_content[:200], "...\n")
+                    logger.debug(f"{doc.page_content[:200]} ...")
 
             retrieved_docs = [doc for doc, _ in filtered_results]
 
         else:
             retrieved_docs = self.retriever.get_relevant_documents(query)
 
-        print(retrieved_docs)
+        logger.debug(f"Retrieved documents: {retrieved_docs}")
         context = "\n\n".join([doc.page_content for doc in retrieved_docs])
-        print(context)
+        logger.debug(f"Context: {context}")
 
-        print("🧠 Generating response...")
+        logger.info("🧠 Generating response...")
 
         for chunk in self.chain.stream(
             {"question": query, "context": context, "chat_history": self.chat_history}
         ):
-            print(chunk.content, end="", flush=True)
+            logger.info(chunk.content)
 
         self.chat_history.append(HumanMessage(content=query))
         self.chat_history.append(AIMessage(content=chunk.content))

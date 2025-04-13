@@ -1,8 +1,9 @@
 import os
 from typing import List
 
-from langchain.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
-from langchain.schema import Document
+from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
+from langchain_core.documents import Document
+from utils.logger import logger
 
 
 class DocumentManager:
@@ -34,7 +35,7 @@ class DocumentManager:
             elif ext == ".txt":
                 loader = TextLoader(filepath, encoding="utf-8")
             else:
-                print(f"Unsupported file type: {ext} for file {filepath}")
+                logger.warning(f"Unsupported file type: {ext} for file {filepath}")
                 return []
 
             documents = loader.load()
@@ -44,7 +45,7 @@ class DocumentManager:
             return documents
 
         except Exception as e:
-            print(f"Error loading {filepath}: {e}")
+            logger.error(f"Error loading {filepath}: {e}")
             return []
 
     def read_uploaded_documents(self) -> List[Document]:
@@ -63,7 +64,7 @@ class DocumentManager:
                 doc.metadata["source_url"] = url
             return docs
         except Exception as e:
-            print(f"Error loading URL {url}: {e}")
+            logger.error(f"Error loading URL {url}: {e}")
             return []
 
     def save_url_list(self, url_list: List[str]):
@@ -71,19 +72,19 @@ class DocumentManager:
             with open(self.url_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(url_list))
         except Exception as e:
-            print(f"Error saving URLs: {e}")
+            logger.error(f"Error saving URLs: {e}")
 
     def delete_file(self, file_path: str) -> bool:
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                print(f"Deleted file: {file_path}")
+                logger.info(f"Deleted file: {file_path}")
                 return True
             else:
-                print(f"File does not exist: {file_path}")
+                logger.warning(f"File does not exist: {file_path}")
                 return False
         except Exception as e:
-            print(f"Error deleting file {file_path}: {e}")
+            logger.error(f"Error deleting file {file_path}: {e}")
             return False
 
     def delete_url(self, url: str, url_list: List[str]) -> bool:
@@ -92,11 +93,11 @@ class DocumentManager:
             try:
                 with open(self.url_file, "w", encoding="utf-8") as f:
                     f.write("\n".join(url_list))
-                print(f"Deleted URL: {url} from {self.url_file}")
+                logger.info(f"Deleted URL: {url} from {self.url_file}")
                 return True
             except Exception as e:
-                print(f"Error updating URL file: {e}")
+                logger.error(f"Error updating URL file: {e}")
                 return False
         else:
-            print(f"URL not found: {url}")
+            logger.warning(f"URL not found: {url}")
             return False

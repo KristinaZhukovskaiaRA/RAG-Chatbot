@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import faiss
 import numpy as np
-from langchain.schema import Document
+from langchain_core.documents import Document
 from sentence_transformers import SentenceTransformer
 
 
